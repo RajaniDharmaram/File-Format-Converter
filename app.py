@@ -1,5 +1,6 @@
 import json
 import uuid
+import logging
 import os
 import glob
 import pandas as pd
@@ -23,25 +24,35 @@ def get_columns(ds):
         columns = [col['column_name'] for col in cols]
         return columns
     except KeyError:
-        print(f'Schema not found for {ds}')
-        return
+        logging.error(f'Schema not found for {ds}')
+        raise
 
 def process_file(src_base_dir,ds,tgt_base_dir):
      for file in glob.glob(f'{src_base_dir}/{ds}/part*'):
-         df = pd.read_csv(file, names=get_columns(ds))
-         os.makedirs(f'{tgt_base_dir}/{ds}', exist_ok=True)
-         df.to_json(
-             f'{tgt_base_dir}/{ds}/{str(uuid.uuid1())}.json',
-             orient='records',
-             lines=True
+        try:
+            df = pd.read_csv(file, names=get_columns(ds))
+            os.makedirs(f'{tgt_base_dir}/{ds}', exist_ok=True)
+            df.to_json(
+                f'{tgt_base_dir}/{ds}/{str(uuid.uuid1())}.json',
+                orient='records',
+                lines=True
              )
-     print(f'Number of records processed for {os.path.split(file)[1]} in {ds} is {df.shape[0]}')
-
+            logging.info(f'Number of records processed for {os.path.split(file)[1]} in {ds} is {df.shape[0]}')
+        except KeyError:
+            raise  
 
 def main():
+    logging.basicConfig(
+        filename='logs/ffc.log',
+        level=logging.INFO, 
+        format='%(levelname)s %(asctime)s %(message)s',
+        datefmt='%Y-%m-%d %I:%M:%S %p'
+    )
+
     src_base_dir=os.environ['SRC_BASE_DIR']
     tgt_base_dir=os.environ['TGT_BASE_DIR']
     datasets=os.environ.get('DATASETS') # orders,order_items
+    logging.info('File Format Conversion: Started')
     if not datasets:
         for path in glob.glob(f'{src_base_dir}/*'):
             if os.path.isdir(path):
@@ -49,7 +60,11 @@ def main():
     else:
         dirs=datasets.split(',') #['orders', 'order_items']  
         for ds in dirs:
-            process_file(src_base_dir, ds, tgt_base_dir)          
+            try:
+                process_file(src_base_dir, ds, tgt_base_dir)
+            except Exception as e:
+                logging.error(f'File Format Conversion for {ds} is not successful')              
+    logging.info('File Format Conversion: Successful')
 
 if __name__ == '__main__':
     main()
